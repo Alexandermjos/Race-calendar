@@ -50,15 +50,14 @@
             { name: 'Espen', color: 'bg-orange-500', text: 'text-orange-700', bg: 'bg-orange-50' }
         ];
 
-        // Inline SVG Ikoner for å unngå "removeChild" feil
         const icons = {
             trophy: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>,
             logout: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>,
             trash: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>,
             mapPin: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>,
             checkCircle: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>,
+            star: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>,
             circle: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/></svg>,
-            calendar: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>,
             x: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>,
             check: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         };
@@ -84,7 +83,7 @@
             const [filter, setFilter] = useState('Alle');
             
             const [form, setForm] = useState({
-                title: '', date: '', type: 'Løp', location: '', participants: [], status: 'Forslag'
+                title: '', date: '', type: 'Løp', location: '', participants: {}
             });
 
             useEffect(() => {
@@ -134,22 +133,28 @@
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     });
                     setShowModal(false);
-                    setForm({ title: '', date: '', type: 'Løp', location: '', participants: [], status: 'Forslag' });
+                    setForm({ title: '', date: '', type: 'Løp', location: '', participants: {} });
                 } catch (err) {
                     console.error(err);
                 }
             };
 
-            const toggleParticipation = async (id, participants = []) => {
+            const cycleStatus = async (id, currentParticipants = {}) => {
                 if (!currentUser) return;
-                let newParticipants = participants.includes(currentUser)
-                    ? participants.filter(p => p !== currentUser)
-                    : [...participants, currentUser];
+                
+                const newParticipants = { ...currentParticipants };
+                const currentStatus = newParticipants[currentUser];
 
-                const newStatus = newParticipants.length > 0 ? 'Påmeldt' : 'Forslag';
+                if (!currentStatus) {
+                    newParticipants[currentUser] = 'Interessert';
+                } else if (currentStatus === 'Interessert') {
+                    newParticipants[currentUser] = 'Påmeldt';
+                } else {
+                    delete newParticipants[currentUser];
+                }
+
                 await db.collection('events').doc(id).update({ 
-                    participants: newParticipants,
-                    status: newStatus
+                    participants: newParticipants
                 });
             };
 
@@ -235,64 +240,85 @@
                             </div>
                         ) : (
                             <div className="space-y-3">
-                                {events.filter(e => filter === 'Alle' || e.type === filter).map(e => (
-                                    <div key={e.id} className="event-card bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex transition-all active:scale-[0.98]">
-                                        <div className={`w-16 flex flex-col items-center justify-center border-r transition-colors ${
-                                            e.status === 'Påmeldt' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'
-                                        }`}>
-                                            <span className="text-[10px] font-black uppercase opacity-60">
-                                                {new Date(e.date).toLocaleDateString('no-NO', {month:'short'})}
-                                            </span>
-                                            <span className="text-2xl font-black">
-                                                {new Date(e.date).getDate()}
-                                            </span>
-                                        </div>
-
-                                        <div className="flex-1 p-4 space-y-2 min-w-0">
-                                            <div className="flex justify-between items-start">
-                                                <h3 className="font-black text-slate-900 uppercase italic truncate pr-2 tracking-tight">
-                                                    {e.title}
-                                                </h3>
-                                                <button onClick={() => remove(e.id)} className="text-slate-200 hover:text-red-500 transition-colors p-1">
-                                                    <Icon name="trash" className="w-3.5 h-3.5"/>
-                                                </button>
-                                            </div>
-
-                                            <div className="flex items-center gap-3 text-[9px] font-bold text-slate-400 uppercase">
-                                                <div className="flex items-center gap-1 shrink-0">
-                                                    <Icon name="mapPin" className="w-3 h-3 text-slate-300" /> 
-                                                    <span>{e.location || 'Oslo'}</span>
-                                                </div>
-                                                <span className={`px-2 py-0.5 rounded-full border ${
-                                                    e.status === 'Påmeldt' ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-white text-amber-600 border-amber-200'
-                                                }`}>
-                                                    {e.status}
+                                {events.filter(e => filter === 'Alle' || e.type === filter).map(e => {
+                                    const myStatus = e.participants?.[currentUser];
+                                    
+                                    return (
+                                        <div key={e.id} className="event-card bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex transition-all active:scale-[0.98]">
+                                            <div className={`w-16 flex flex-col items-center justify-center border-r transition-colors ${
+                                                myStatus === 'Påmeldt' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
+                                                myStatus === 'Interessert' ? 'bg-amber-50 text-amber-600 border-amber-100' : 
+                                                'bg-slate-50 text-slate-400 border-slate-100'
+                                            }`}>
+                                                <span className="text-[10px] font-black uppercase opacity-60">
+                                                    {new Date(e.date).toLocaleDateString('no-NO', {month:'short'})}
+                                                </span>
+                                                <span className="text-2xl font-black">
+                                                    {new Date(e.date).getDate()}
                                                 </span>
                                             </div>
 
-                                            <div className="flex flex-wrap gap-1.5 pt-1">
-                                                {RUNNERS.map(r => (
-                                                    <div key={r.name} className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase transition-all ${
-                                                        e.participants?.includes(r.name) 
-                                                        ? `${r.bg} ${r.text} shadow-sm ring-1 ring-black/5` 
-                                                        : 'bg-slate-50 text-slate-300 opacity-40'
-                                                    }`}>
-                                                        {r.name}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
+                                            <div className="flex-1 p-4 space-y-2 min-w-0">
+                                                <div className="flex justify-between items-start">
+                                                    <h3 className="font-black text-slate-900 uppercase italic truncate pr-2 tracking-tight">
+                                                        {e.title}
+                                                    </h3>
+                                                    <button onClick={() => remove(e.id)} className="text-slate-200 hover:text-red-500 transition-colors p-1">
+                                                        <Icon name="trash" className="w-3.5 h-3.5"/>
+                                                    </button>
+                                                </div>
 
-                                        <button 
-                                            onClick={() => toggleParticipation(e.id, e.participants)} 
-                                            className={`w-14 flex items-center justify-center transition-all ${
-                                                e.participants?.includes(currentUser) ? 'bg-emerald-500 text-white' : 'bg-slate-50 text-slate-200'
-                                            }`}
-                                        >
-                                            <Icon name={e.participants?.includes(currentUser) ? "checkCircle" : "circle"} className="w-6 h-6" />
-                                        </button>
-                                    </div>
-                                ))}
+                                                <div className="flex items-center gap-3 text-[9px] font-bold text-slate-400 uppercase">
+                                                    <div className="flex items-center gap-1 shrink-0">
+                                                        <Icon name="mapPin" className="w-3 h-3 text-slate-300" /> 
+                                                        <span>{e.location || 'Oslo'}</span>
+                                                    </div>
+                                                    
+                                                    {/* Viser kun status hvis brukeren selv har valgt noe */}
+                                                    {myStatus && (
+                                                        <span className={`px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                                                            myStatus === 'Påmeldt' ? 'bg-emerald-500 text-white border-emerald-400' : 
+                                                            'bg-amber-400 text-amber-900 border-amber-300'
+                                                        }`}>
+                                                            {myStatus === 'Påmeldt' ? <Icon name="check" className="w-2 h-2" /> : <Icon name="star" className="w-2 h-2 fill-current" />}
+                                                            {myStatus === 'Påmeldt' ? 'Du er påmeldt' : 'Du vurderer'}
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                <div className="flex flex-wrap gap-1.5 pt-1">
+                                                    {RUNNERS.map(r => {
+                                                        const status = e.participants?.[r.name];
+                                                        return (
+                                                            <div key={r.name} className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase transition-all flex items-center gap-1 ${
+                                                                status === 'Påmeldt' ? `${r.bg} ${r.text} shadow-sm ring-1 ring-black/5` :
+                                                                status === 'Interessert' ? `bg-amber-100 text-amber-700 shadow-sm ring-1 ring-amber-200` :
+                                                                'bg-slate-50 text-slate-300 opacity-40'
+                                                            }`}>
+                                                                {status === 'Påmeldt' && <Icon name="check" className="w-1.5 h-1.5" />}
+                                                                {status === 'Interessert' && <Icon name="star" className="w-1.5 h-1.5 fill-current" />}
+                                                                {r.name}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+
+                                            <button 
+                                                onClick={() => cycleStatus(e.id, e.participants)} 
+                                                className={`w-14 flex items-center justify-center transition-all ${
+                                                    myStatus === 'Påmeldt' ? 'bg-emerald-500 text-white' : 
+                                                    myStatus === 'Interessert' ? 'bg-amber-400 text-white' : 
+                                                    'bg-slate-50 text-slate-200'
+                                                }`}
+                                            >
+                                                {myStatus === 'Påmeldt' ? <Icon name="checkCircle" className="w-6 h-6" /> :
+                                                 myStatus === 'Interessert' ? <Icon name="star" className="w-6 h-6 fill-current" /> :
+                                                 <Icon name="circle" className="w-6 h-6" />}
+                                            </button>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
                     </main>
