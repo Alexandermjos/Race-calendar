@@ -3,85 +3,177 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Løp 2026</title>
+    <title>Løpekalender 2026</title>
+    
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+    </style>
 </head>
-<body class="bg-slate-100">
+<body class="bg-slate-50">
     <div id="root"></div>
+
     <script type="text/babel">
         const { useState, useEffect } = React;
-        const RUNNERS = ['Alexander', 'Didrik', 'Erik', 'Espen'];
+
+        // --- KONFIGURASJON ---
+        const RUNNERS = [
+            { name: 'Alexander', color: 'bg-blue-500', text: 'text-blue-700', bg: 'bg-blue-50' },
+            { name: 'Didrik', color: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50' },
+            { name: 'Erik', color: 'bg-purple-500', text: 'text-purple-700', bg: 'bg-purple-50' },
+            { name: 'Espen', color: 'bg-orange-500', text: 'text-orange-700', bg: 'bg-orange-50' }
+        ];
+
+        // MERK: Du må bytte ut disse med dine egne fra Firebase Console for at det skal virke utenfor mitt miljø
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT.appspot.com",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        // Initialiser Firebase (Compat mode for enkelthet i index.html)
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
 
         function App() {
             const [events, setEvents] = useState([]);
-            const [show, setShow] = useState(false);
-            const [form, setForm] = useState({ title: '', date: '', parts: [] });
+            const [showModal, setShowModal] = useState(false);
+            const [loading, setLoading] = useState(true);
+            const [formData, setFormData] = useState({
+                title: '', date: '', type: 'Løp', location: '', participants: [], status: 'Forslag'
+            });
 
+            // Hent data i sanntid fra Firebase
             useEffect(() => {
-                const data = localStorage.getItem('run_v3');
-                if (data) setEvents(JSON.parse(data));
+                const unsubscribe = db.collection('løp_2026')
+                    .orderBy('date', 'asc')
+                    .onSnapshot((snapshot) => {
+                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        setEvents(data);
+                        setLoading(false);
+                        if (window.lucide) lucide.createIcons();
+                    });
+                return () => unsubscribe();
             }, []);
 
-            useEffect(() => {
-                localStorage.setItem('run_v3', JSON.stringify(events));
-                if (window.lucide) lucide.createIcons();
-            }, [events, show]);
-
-            const add = (e) => {
+            const saveEvent = async (e) => {
                 e.preventDefault();
-                setEvents([...events, { ...form, id: Date.now() }].sort((a,b) => new Date(a.date) - new Date(b.date)));
-                setShow(false);
-                setForm({ title: '', date: '', parts: [] });
+                await db.collection('løp_2026').add(formData);
+                setShowModal(false);
+                setFormData({ title: '', date: '', type: 'Løp', location: '', participants: [], status: 'Forslag' });
+            };
+
+            const toggleStatus = async (id, current) => {
+                const next = current === 'Forslag' ? 'Påmeldt' : 'Forslag';
+                await db.collection('løp_2026').doc(id).update({ status: next });
+            };
+
+            const deleteEvent = async (id) => {
+                if (confirm("Slette denne?")) await db.collection('løp_2026').doc(id).delete();
             };
 
             return (
-                <div className="max-w-md mx-auto min-h-screen bg-white shadow-lg">
-                    <div className="bg-slate-900 text-white p-6 flex justify-between items-center">
-                        <h1 className="font-black italic uppercase">Løpekalender</h1>
-                        <button onClick={() => setShow(true)} className="bg-yellow-400 text-black px-4 py-1 rounded-full font-bold text-xs">+ NY</button>
-                    </div>
+                <div className="min-h-screen pb-10">
+                    <header className="bg-slate-900 text-white p-6 sticky top-0 z-20 shadow-lg">
+                        <div className="max-w-xl mx-auto flex justify-between items-center">
+                            <h1 className="text-xl font-black italic uppercase tracking-tight">Løpekalender</h1>
+                            <button onClick={() => setShowModal(true)} className="bg-yellow-400 text-slate-900 px-4 py-2 rounded-full font-bold text-xs hover:scale-105 transition-all">
+                                + NY AKTIVITET
+                            </button>
+                        </div>
+                    </header>
 
-                    <div className="p-4 space-y-3">
-                        {events.map(e => (
-                            <div key={e.id} className="border p-4 rounded-xl flex justify-between items-center bg-slate-50">
-                                <div>
-                                    <p className="text-[10px] font-bold text-slate-400">{e.date}</p>
-                                    <h3 className="font-bold uppercase tracking-tight">{e.title}</h3>
-                                    <div className="flex gap-1 mt-1">
-                                        {e.parts.map(p => <span key={p} className="text-[8px] bg-slate-200 px-1 rounded font-bold">{p}</span>)}
+                    <main className="max-w-xl mx-auto p-4 space-y-4">
+                        {loading ? (
+                            <p className="text-center py-10 text-slate-400 uppercase font-bold text-xs animate-pulse">Laster fellestreninger...</p>
+                        ) : events.map(event => (
+                            <div key={event.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex">
+                                <div className={`w-20 flex flex-col items-center justify-center border-r ${event.status === 'Påmeldt' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+                                    <span className="text-[10px] font-black uppercase">{new Date(event.date).toLocaleDateString('no-NO', { month: 'short' })}</span>
+                                    <span className="text-2xl font-black leading-none">{new Date(event.date).getDate()}</span>
+                                </div>
+                                
+                                <div className="flex-1 p-4 space-y-2">
+                                    <div className="flex justify-between items-start">
+                                        <h3 className="font-black text-slate-900 uppercase italic leading-tight">{event.title}</h3>
+                                        <button onClick={() => deleteEvent(event.id)} className="text-slate-200 hover:text-red-500"><i data-lucide="trash-2" className="w-4 h-4"></i></button>
+                                    </div>
+                                    
+                                    <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase">
+                                        <span>{event.location || 'Oslo'}</span>
+                                        <span className={`px-2 py-0.5 rounded ${event.status === 'Påmeldt' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                            {event.status}
+                                        </span>
+                                    </div>
+
+                                    <div className="flex flex-wrap gap-1 mt-2">
+                                        {RUNNERS.map(r => (
+                                            <div key={r.name} className={`px-2 py-1 rounded text-[9px] font-black uppercase ${event.participants?.includes(r.name) ? `${r.bg} ${r.text}` : 'bg-slate-50 text-slate-200'}`}>
+                                                {r.name}
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
-                                <button onClick={() => setEvents(events.filter(x => x.id !== e.id))} className="text-slate-300">×</button>
+
+                                <button onClick={() => toggleStatus(event.id, event.status)} className={`w-12 flex items-center justify-center transition-colors ${event.status === 'Påmeldt' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-300'}`}>
+                                    <i data-lucide="check" className="w-6 h-6"></i>
+                                </button>
                             </div>
                         ))}
-                    </div>
+                    </main>
 
-                    {show && (
-                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4">
-                            <div className="bg-white p-6 rounded-2xl w-full space-y-4">
-                                <h2 className="font-bold">Ny aktivitet</h2>
-                                <input placeholder="Hva?" className="w-full border p-3 rounded-lg" onChange={x => setForm({...form, title: x.target.value})} />
-                                <input type="date" className="w-full border p-3 rounded-lg" onChange={x => setForm({...form, date: x.target.value})} />
-                                <div className="grid grid-cols-2 gap-2">
-                                    {RUNNERS.map(r => (
-                                        <button key={r} type="button" onClick={() => setForm({...form, parts: form.parts.includes(r) ? form.parts.filter(p => p !== r) : [...form.parts, r]})} className={`p-2 rounded-lg text-xs border ${form.parts.includes(r) ? 'bg-slate-900 text-white' : 'bg-white'}`}>{r}</button>
-                                    ))}
-                                </div>
-                                <div className="flex gap-2">
-                                    <button onClick={() => setShow(false)} className="flex-1 p-3 bg-slate-100 rounded-xl font-bold">Avbryt</button>
-                                    <button onClick={add} className="flex-1 p-3 bg-yellow-400 rounded-xl font-bold text-slate-900">Lagre</button>
-                                </div>
+                    {showModal && (
+                        <div className="fixed inset-0 bg-slate-900/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                            <div className="bg-white rounded-3xl w-full max-w-md p-6">
+                                <h2 className="font-black uppercase italic text-xl mb-6">Ny aktivitet</h2>
+                                <form onSubmit={saveEvent} className="space-y-4">
+                                    <input required placeholder="Navn på løp..." className="w-full p-4 bg-slate-100 rounded-xl font-bold outline-none" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <input required type="date" className="p-4 bg-slate-100 rounded-xl font-bold text-sm" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} />
+                                        <select className="p-4 bg-slate-100 rounded-xl font-bold text-sm" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}>
+                                            <option value="Løp">Løp</option>
+                                            <option value="Fellestrening">Trening</option>
+                                        </select>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {RUNNERS.map(r => (
+                                            <button key={r.name} type="button" onClick={() => setFormData({...formData, participants: formData.participants.includes(r.name) ? formData.participants.filter(p => p !== r.name) : [...formData.participants, r.name]})} className={`p-3 rounded-xl text-xs font-black border-2 transition-all ${formData.participants.includes(r.name) ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-100 text-slate-300'}`}>
+                                                {r.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="flex gap-2 pt-4">
+                                        <button type="button" onClick={() => setShowModal(false)} className="flex-1 p-4 bg-slate-100 rounded-2xl font-bold uppercase text-xs">Avbryt</button>
+                                        <button type="submit" className="flex-1 p-4 bg-yellow-400 text-slate-900 font-black rounded-2xl uppercase text-xs shadow-lg">Lagre</button>
+                                    </div>
+                                </form>
                             </div>
                         </div>
                     )}
                 </div>
             );
         }
-        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+        
+        // Initialiser ikoner etter render
+        setTimeout(() => lucide.createIcons(), 500);
     </script>
 </body>
 </html>
