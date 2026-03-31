@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Løpekalender 2026</title>
     
+    <!-- Meta-tags for deling (Open Graph) -->
+    <meta property="og:title" content="Løpekalender 2026">
+    <meta property="og:description" content="Oversikt over løp og fellestreninger for gjengen.">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
     <!-- Styling & Ikoner -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -24,7 +30,7 @@
         body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         
-        /* Smooth fade in for cards */
+        /* Myk animasjon for kortene */
         .event-card { animation: fadeIn 0.3s ease-out forwards; }
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
@@ -38,7 +44,7 @@
     <script type="text/babel">
         const { useState, useEffect, useCallback } = React;
 
-        // --- DIN KONFIGURASJON ---
+        // --- KONFIGURASJON ---
         const firebaseConfig = {
             apiKey: "AIzaSyAz9JaUKze476cCA_fC2YsQa3_TUzU7oJM",
             authDomain: "race-calendar-7f8ee.firebaseapp.com",
@@ -55,14 +61,14 @@
             { name: 'Espen', color: 'bg-orange-500', text: 'text-orange-700', bg: 'bg-orange-50' }
         ];
 
-        // Initialiser Firebase (Compat)
+        // Initialiser Firebase
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
         }
         const db = firebase.firestore();
         const auth = firebase.auth();
 
-        // Ikon-hjelper som venter på at biblioteket er lastet
+        // Ikon-hjelper
         const Icon = ({ name, className }) => {
             useEffect(() => { 
                 if (window.lucide) lucide.createIcons(); 
@@ -80,23 +86,20 @@
                 title: '', date: '', type: 'Løp', location: '', participants: [], status: 'Forslag'
             });
 
-            // Start opp appen og hent data
             useEffect(() => {
-                // Prøv anonym login for å slippe 400-feil i loggen (hvis aktivert i konsollen)
-                // Hvis ikke aktivert, vil dette feile stille og vi fortsetter
+                // Forsøk anonym pålogging for å unngå logg-feil
                 auth.signInAnonymously().catch(() => {
-                    console.log("Merk: Anonym auth ikke aktivert. Firestore fungerer kun hvis rules er public.");
+                    console.log("Bruker uinnlogget tilgang.");
                 });
 
                 const unsubscribe = db.collection('events')
                     .onSnapshot((snapshot) => {
                         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                        // Sorterer kronologisk
                         const sorted = data.sort((a, b) => new Date(a.date) - new Date(b.date));
                         setEvents(sorted);
                         setLoading(false);
                     }, (err) => {
-                        console.error("Firestore Error:", err);
+                        console.error("Firestore feil:", err);
                         setLoading(false);
                     });
 
@@ -113,7 +116,7 @@
                     setShowModal(false);
                     setForm({ title: '', date: '', type: 'Løp', location: '', participants: [], status: 'Forslag' });
                 } catch (err) {
-                    alert("Kunne ikke lagre. Sjekk Firestore Rules!");
+                    alert("Kunne ikke lagre. Sjekk Firestore-reglene!");
                 }
             };
 
@@ -123,7 +126,7 @@
             };
 
             const remove = async (id) => {
-                if (confirm("Vil du slette dette løpet?")) {
+                if (confirm("Vil du slette denne planen?")) {
                     await db.collection('events').doc(id).delete();
                 }
             }
@@ -132,7 +135,6 @@
 
             return (
                 <div className="min-h-screen pb-20 bg-slate-50">
-                    {/* Header */}
                     <header className="bg-slate-900 text-white p-6 sticky top-0 z-20 shadow-xl border-b border-slate-800">
                         <div className="max-w-md mx-auto flex justify-between items-center">
                             <div className="flex items-center gap-3">
@@ -151,7 +153,6 @@
                     </header>
 
                     <main className="max-w-md mx-auto p-4 space-y-4 mt-2">
-                        {/* Filter */}
                         <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                             {['Alle', 'Løp', 'Fellestrening'].map(t => (
                                 <button 
@@ -168,16 +169,15 @@
                             ))}
                         </div>
 
-                        {/* Event List */}
                         {loading ? (
                             <div className="py-24 text-center">
                                 <div className="inline-block w-8 h-8 border-4 border-slate-200 border-t-yellow-400 rounded-full animate-spin mb-4"></div>
-                                <p className="font-bold text-slate-300 uppercase text-[10px] tracking-widest">Synkroniserer skyen...</p>
+                                <p className="font-bold text-slate-300 uppercase text-[10px] tracking-widest">Henter data...</p>
                             </div>
                         ) : filtered.length === 0 ? (
                             <div className="py-20 text-center bg-white rounded-3xl border-2 border-dashed border-slate-200 px-10">
                                 <Icon name="calendar" className="w-8 h-8 text-slate-200 mx-auto mb-3" />
-                                <p className="text-slate-400 font-bold uppercase text-[10px] tracking-tight italic">Ingen aktiviteter planlagt</p>
+                                <p className="text-slate-400 font-bold uppercase text-[10px] tracking-tight italic">Ingen aktiviteter funnet</p>
                             </div>
                         ) : (
                             <div className="space-y-3">
@@ -250,14 +250,13 @@
                         )}
                     </main>
 
-                    {/* New Event Modal */}
                     {showModal && (
                         <div className="fixed inset-0 bg-slate-900/80 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-md transition-all duration-300">
                             <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md p-6 shadow-2xl animate-in slide-in-from-bottom duration-300">
                                 <div className="flex justify-between items-center mb-6">
                                     <div className="flex items-center gap-2">
                                         <div className="w-2 h-8 bg-yellow-400 rounded-full"></div>
-                                        <h2 className="font-black uppercase italic text-xl tracking-tight text-slate-900">Planlegg Nytt Løp</h2>
+                                        <h2 className="font-black uppercase italic text-xl tracking-tight text-slate-900">Planlegg Ny Aktivitet</h2>
                                     </div>
                                     <button onClick={() => setShowModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400">
                                         <Icon name="x" className="w-6 h-6"/>
@@ -266,7 +265,7 @@
 
                                 <form onSubmit={handleSubmit} className="space-y-5">
                                     <div className="space-y-1.5">
-                                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Hva er målet?</label>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Navn på løpet</label>
                                         <input 
                                             required 
                                             placeholder="F.eks. Sentrumsløpet 10k" 
@@ -288,7 +287,7 @@
                                             />
                                         </div>
                                         <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Type</label>
+                                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Kategori</label>
                                             <select 
                                                 className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-yellow-400 focus:bg-white transition-all" 
                                                 value={form.type} 
@@ -301,7 +300,7 @@
                                     </div>
 
                                     <div className="space-y-1.5">
-                                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Hvor?</label>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Sted</label>
                                         <input 
                                             placeholder="Sted, by eller bane" 
                                             className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold outline-none focus:border-yellow-400 focus:bg-white transition-all" 
@@ -311,7 +310,7 @@
                                     </div>
 
                                     <div className="space-y-2">
-                                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1 italic">Hvem stiller til start?</label>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1 italic">Hvem blir med?</label>
                                         <div className="grid grid-cols-2 gap-2">
                                             {RUNNERS.map(r => {
                                                 const selected = form.participants.includes(r.name);
@@ -338,7 +337,7 @@
                                         type="submit" 
                                         className="w-full p-5 bg-yellow-400 text-slate-900 font-black rounded-3xl uppercase tracking-widest shadow-xl shadow-yellow-400/30 active:scale-[0.97] transition-all mt-4 border-b-4 border-yellow-600"
                                     >
-                                        Lagre Planen
+                                        Publiser løpet
                                     </button>
                                 </form>
                             </div>
