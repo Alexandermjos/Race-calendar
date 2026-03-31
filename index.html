@@ -1,179 +1,385 @@
-<!DOCTYPE html>
-<html lang="no">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Løpekalender 2026</title>
-    
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-    
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+import React, { useState, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getFirestore, 
+  collection, 
+  addDoc, 
+  onSnapshot, 
+  updateDoc, 
+  doc, 
+  deleteDoc,
+  query
+} from 'firebase/firestore';
+import { 
+  getAuth, 
+  signInAnonymously, 
+  signInWithCustomToken, 
+  onAuthStateChanged 
+} from 'firebase/auth';
+import { 
+  Calendar, 
+  Plus, 
+  Trophy, 
+  CheckCircle2, 
+  Circle, 
+  Trash2, 
+  MapPin, 
+  X,
+  User
+} from 'lucide-react';
 
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+// --- Firebase Setup ---
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'race-calendar-v1';
 
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-    </style>
-</head>
-<body class="bg-slate-50">
-    <div id="root"></div>
+const RUNNERS = [
+  { name: 'Alexander', color: 'bg-blue-500', text: 'text-blue-700', bg: 'bg-blue-50' },
+  { name: 'Didrik', color: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50' },
+  { name: 'Erik', color: 'bg-purple-500', text: 'text-purple-700', bg: 'bg-purple-50' },
+  { name: 'Espen', color: 'bg-orange-500', text: 'text-orange-700', bg: 'bg-orange-50' }
+];
 
-    <script type="text/babel">
-        const { useState, useEffect } = React;
+const EVENT_TYPES = ['Løp', 'Fellestrening'];
 
-        // --- KONFIGURASJON ---
-        const RUNNERS = [
-            { name: 'Alexander', color: 'bg-blue-500', text: 'text-blue-700', bg: 'bg-blue-50' },
-            { name: 'Didrik', color: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50' },
-            { name: 'Erik', color: 'bg-purple-500', text: 'text-purple-700', bg: 'bg-purple-50' },
-            { name: 'Espen', color: 'bg-orange-500', text: 'text-orange-700', bg: 'bg-orange-50' }
-        ];
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [events, setEvents] = useState([]);
+  const [showModal, setShowModal] = useState(false);
+  const [filter, setFilter] = useState('Alle');
+  const [loading, setLoading] = useState(true);
 
-        // MERK: Du må bytte ut disse med dine egne fra Firebase Console for at det skal virke utenfor mitt miljø
-        const firebaseConfig = {
-            apiKey: "YOUR_API_KEY",
-            authDomain: "YOUR_PROJECT.firebaseapp.com",
-            projectId: "YOUR_PROJECT_ID",
-            storageBucket: "YOUR_PROJECT.appspot.com",
-            messagingSenderId: "YOUR_SENDER_ID",
-            appId: "YOUR_APP_ID"
-        };
+  // Form State
+  const [formData, setFormData] = useState({
+    title: '',
+    date: '',
+    type: 'Løp',
+    location: '',
+    participants: [],
+    status: 'Forslag'
+  });
 
-        // Initialiser Firebase (Compat mode for enkelthet i index.html)
-        if (!firebase.apps.length) {
-            firebase.initializeApp(firebaseConfig);
+  // 1. Auth Init
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
         }
-        const db = firebase.firestore();
+      } catch (err) {
+        console.error("Auth error:", err);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, setUser);
+    return () => unsubscribe();
+  }, []);
 
-        function App() {
-            const [events, setEvents] = useState([]);
-            const [showModal, setShowModal] = useState(false);
-            const [loading, setLoading] = useState(true);
-            const [formData, setFormData] = useState({
-                title: '', date: '', type: 'Løp', location: '', participants: [], status: 'Forslag'
-            });
+  // 2. Data Fetching
+  useEffect(() => {
+    if (!user) return;
 
-            // Hent data i sanntid fra Firebase
-            useEffect(() => {
-                const unsubscribe = db.collection('løp_2026')
-                    .orderBy('date', 'asc')
-                    .onSnapshot((snapshot) => {
-                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                        setEvents(data);
-                        setLoading(false);
-                        if (window.lucide) lucide.createIcons();
-                    });
-                return () => unsubscribe();
-            }, []);
+    const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'events'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const eventList = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })).sort((a, b) => new Date(a.date) - new Date(b.date));
+      setEvents(eventList);
+      setLoading(false);
+    }, (error) => {
+      console.error("Firestore error:", error);
+      setLoading(false);
+    });
 
-            const saveEvent = async (e) => {
-                e.preventDefault();
-                await db.collection('løp_2026').add(formData);
-                setShowModal(false);
-                setFormData({ title: '', date: '', type: 'Løp', location: '', participants: [], status: 'Forslag' });
-            };
+    return () => unsubscribe();
+  }, [user]);
 
-            const toggleStatus = async (id, current) => {
-                const next = current === 'Forslag' ? 'Påmeldt' : 'Forslag';
-                await db.collection('løp_2026').doc(id).update({ status: next });
-            };
+  const handleAddEvent = async (e) => {
+    e.preventDefault();
+    if (!user) return;
 
-            const deleteEvent = async (id) => {
-                if (confirm("Slette denne?")) await db.collection('løp_2026').doc(id).delete();
-            };
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'events'), {
+        ...formData,
+        createdAt: new Date().toISOString()
+      });
+      setShowModal(false);
+      setFormData({
+        title: '',
+        date: '',
+        type: 'Løp',
+        location: '',
+        participants: [],
+        status: 'Forslag'
+      });
+    } catch (err) {
+      console.error("Error adding event:", err);
+    }
+  };
 
-            return (
-                <div className="min-h-screen pb-10">
-                    <header className="bg-slate-900 text-white p-6 sticky top-0 z-20 shadow-lg">
-                        <div className="max-w-xl mx-auto flex justify-between items-center">
-                            <h1 className="text-xl font-black italic uppercase tracking-tight">Løpekalender</h1>
-                            <button onClick={() => setShowModal(true)} className="bg-yellow-400 text-slate-900 px-4 py-2 rounded-full font-bold text-xs hover:scale-105 transition-all">
-                                + NY AKTIVITET
-                            </button>
-                        </div>
-                    </header>
+  const toggleParticipant = (name) => {
+    setFormData(prev => ({
+      ...prev,
+      participants: prev.participants.includes(name)
+        ? prev.participants.filter(p => p !== name)
+        : [...prev.participants, name]
+    }));
+  };
 
-                    <main className="max-w-xl mx-auto p-4 space-y-4">
-                        {loading ? (
-                            <p className="text-center py-10 text-slate-400 uppercase font-bold text-xs animate-pulse">Laster fellestreninger...</p>
-                        ) : events.map(event => (
-                            <div key={event.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex">
-                                <div className={`w-20 flex flex-col items-center justify-center border-r ${event.status === 'Påmeldt' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
-                                    <span className="text-[10px] font-black uppercase">{new Date(event.date).toLocaleDateString('no-NO', { month: 'short' })}</span>
-                                    <span className="text-2xl font-black leading-none">{new Date(event.date).getDate()}</span>
-                                </div>
-                                
-                                <div className="flex-1 p-4 space-y-2">
-                                    <div className="flex justify-between items-start">
-                                        <h3 className="font-black text-slate-900 uppercase italic leading-tight">{event.title}</h3>
-                                        <button onClick={() => deleteEvent(event.id)} className="text-slate-200 hover:text-red-500"><i data-lucide="trash-2" className="w-4 h-4"></i></button>
-                                    </div>
-                                    
-                                    <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase">
-                                        <span>{event.location || 'Oslo'}</span>
-                                        <span className={`px-2 py-0.5 rounded ${event.status === 'Påmeldt' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                                            {event.status}
-                                        </span>
-                                    </div>
+  const updateStatus = async (eventId, currentStatus) => {
+    const newStatus = currentStatus === 'Forslag' ? 'Påmeldt' : 'Forslag';
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'events', eventId), {
+        status: newStatus
+      });
+    } catch (err) {
+      console.error("Error updating status:", err);
+    }
+  };
 
-                                    <div className="flex flex-wrap gap-1 mt-2">
-                                        {RUNNERS.map(r => (
-                                            <div key={r.name} className={`px-2 py-1 rounded text-[9px] font-black uppercase ${event.participants?.includes(r.name) ? `${r.bg} ${r.text}` : 'bg-slate-50 text-slate-200'}`}>
-                                                {r.name}
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
+  const deleteEvent = async (eventId) => {
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'events', eventId));
+    } catch (err) {
+      console.error("Error deleting event:", err);
+    }
+  };
 
-                                <button onClick={() => toggleStatus(event.id, event.status)} className={`w-12 flex items-center justify-center transition-colors ${event.status === 'Påmeldt' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-300'}`}>
-                                    <i data-lucide="check" className="w-6 h-6"></i>
-                                </button>
-                            </div>
-                        ))}
-                    </main>
+  const filteredEvents = events.filter(e => filter === 'Alle' || e.type === filter);
 
-                    {showModal && (
-                        <div className="fixed inset-0 bg-slate-900/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-                            <div className="bg-white rounded-3xl w-full max-w-md p-6">
-                                <h2 className="font-black uppercase italic text-xl mb-6">Ny aktivitet</h2>
-                                <form onSubmit={saveEvent} className="space-y-4">
-                                    <input required placeholder="Navn på løp..." className="w-full p-4 bg-slate-100 rounded-xl font-bold outline-none" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <input required type="date" className="p-4 bg-slate-100 rounded-xl font-bold text-sm" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} />
-                                        <select className="p-4 bg-slate-100 rounded-xl font-bold text-sm" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}>
-                                            <option value="Løp">Løp</option>
-                                            <option value="Fellestrening">Trening</option>
-                                        </select>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {RUNNERS.map(r => (
-                                            <button key={r.name} type="button" onClick={() => setFormData({...formData, participants: formData.participants.includes(r.name) ? formData.participants.filter(p => p !== r.name) : [...formData.participants, r.name]})} className={`p-3 rounded-xl text-xs font-black border-2 transition-all ${formData.participants.includes(r.name) ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-100 text-slate-300'}`}>
-                                                {r.name}
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <div className="flex gap-2 pt-4">
-                                        <button type="button" onClick={() => setShowModal(false)} className="flex-1 p-4 bg-slate-100 rounded-2xl font-bold uppercase text-xs">Avbryt</button>
-                                        <button type="submit" className="flex-1 p-4 bg-yellow-400 text-slate-900 font-black rounded-2xl uppercase text-xs shadow-lg">Lagre</button>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-                    )}
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 pb-20 font-sans">
+      {/* Header */}
+      <header className="bg-slate-900 text-white p-6 shadow-xl sticky top-0 z-20">
+        <div className="max-w-3xl mx-auto flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <div className="bg-yellow-400 p-2 rounded-lg">
+              <Trophy className="w-6 h-6 text-slate-900" />
+            </div>
+            <div>
+              <h1 className="text-xl font-black tracking-tight uppercase italic">Løpekalender 2026</h1>
+              <div className="flex gap-2 mt-1">
+                {RUNNERS.map(r => (
+                  <div key={r.name} className={`w-2 h-2 rounded-full ${r.color}`} title={r.name} />
+                ))}
+              </div>
+            </div>
+          </div>
+          <button 
+            onClick={() => setShowModal(true)}
+            className="bg-yellow-400 text-slate-900 px-4 py-2 rounded-full font-bold text-sm flex items-center gap-2 hover:bg-yellow-300 transition-all active:scale-95 shadow-[0_4px_0_rgb(161,131,0)] active:translate-y-1 active:shadow-none"
+          >
+            <Plus className="w-4 h-4" /> NY AKTIVITET
+          </button>
+        </div>
+      </header>
+
+      <main className="max-w-3xl mx-auto p-4 space-y-6">
+        {/* Filters */}
+        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+          {['Alle', ...EVENT_TYPES].map(t => (
+            <button
+              key={t}
+              onClick={() => setFilter(t)}
+              className={`px-6 py-2 rounded-full text-xs font-black uppercase tracking-widest transition-all border-2 ${
+                filter === t 
+                  ? 'bg-slate-900 text-white border-slate-900' 
+                  : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+
+        {/* Event List */}
+        {loading ? (
+          <div className="text-center py-20 animate-pulse text-slate-400 font-bold uppercase tracking-widest">Henter løpsdata...</div>
+        ) : filteredEvents.length === 0 ? (
+          <div className="text-center py-20 bg-white rounded-3xl border-4 border-dashed border-slate-200">
+            <p className="text-slate-400 font-bold">Ingen {filter.toLowerCase()} i sikte...</p>
+          </div>
+        ) : (
+          <div className="grid gap-4">
+            {filteredEvents.map(event => (
+              <div 
+                key={event.id} 
+                className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col sm:flex-row group"
+              >
+                <div className={`w-full sm:w-24 p-4 flex flex-col items-center justify-center text-center border-b sm:border-b-0 sm:border-r border-slate-100 ${
+                  event.status === 'Påmeldt' ? 'bg-green-50' : 'bg-amber-50'
+                }`}>
+                  <span className="text-xs font-black text-slate-400 uppercase">
+                    {new Date(event.date).toLocaleDateString('no-NO', { month: 'short' })}
+                  </span>
+                  <span className="text-2xl font-black text-slate-900 leading-none">
+                    {new Date(event.date).getDate()}
+                  </span>
                 </div>
-            );
-        }
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-        
-        // Initialiser ikoner etter render
-        setTimeout(() => lucide.createIcons(), 500);
-    </script>
-</body>
-</html>
+                <div className="flex-1 p-5 space-y-3">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded border ${
+                          event.type === 'Løp' ? 'border-red-200 text-red-600 bg-red-50' : 'border-blue-200 text-blue-600 bg-blue-50'
+                        }`}>
+                          {event.type}
+                        </span>
+                        <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded border ${
+                          event.status === 'Påmeldt' ? 'border-green-200 text-green-600 bg-green-50' : 'border-amber-200 text-amber-600 bg-amber-50'
+                        }`}>
+                          {event.status}
+                        </span>
+                      </div>
+                      <h3 className="font-black text-xl text-slate-900 uppercase italic tracking-tight">{event.title}</h3>
+                    </div>
+                    <button 
+                      onClick={() => deleteEvent(event.id)}
+                      className="text-slate-300 hover:text-red-500 transition-colors p-1"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-4 text-sm text-slate-500 font-medium">
+                    <span className="flex items-center gap-1.5"><MapPin className="w-4 h-4 text-slate-400" /> {event.location || 'Ingen lokasjon'}</span>
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {RUNNERS.map(runner => {
+                      const isParticipating = event.participants?.includes(runner.name);
+                      return (
+                        <div 
+                          key={runner.name}
+                          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all border ${
+                            isParticipating 
+                              ? `${runner.bg} border-transparent ${runner.text}` 
+                              : 'bg-white border-slate-100 text-slate-300 opacity-50'
+                          }`}
+                        >
+                          <div className={`w-1.5 h-1.5 rounded-full ${isParticipating ? runner.color : 'bg-slate-300'}`} />
+                          {runner.name}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <button 
+                  onClick={() => updateStatus(event.id, event.status)}
+                  className={`w-full sm:w-16 flex items-center justify-center p-4 transition-all ${
+                    event.status === 'Påmeldt' 
+                      ? 'bg-green-500 text-white hover:bg-green-600' 
+                      : 'bg-slate-100 text-slate-400 hover:bg-amber-100 hover:text-amber-600'
+                  }`}
+                  title={event.status === 'Påmeldt' ? 'Meld av' : 'Meld på'}
+                >
+                  <CheckCircle2 className="w-6 h-6" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
+
+      {/* Modal for adding events */}
+      {showModal && (
+        <div className="fixed inset-0 bg-slate-900/80 z-50 flex items-center justify-center p-4 backdrop-blur-md">
+          <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-slate-200">
+            <div className="p-6 bg-slate-900 text-white flex justify-between items-center">
+              <h2 className="text-xl font-black uppercase italic tracking-wider">Ny aktivitet</h2>
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-white transition-colors">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <form onSubmit={handleAddEvent} className="p-8 space-y-6">
+              <div className="space-y-4">
+                <input 
+                  required
+                  type="text" 
+                  placeholder="Hva skal vi løpe?"
+                  className="w-full text-lg font-bold p-0 border-b-2 border-slate-100 focus:border-yellow-400 outline-none pb-2 transition-colors placeholder:text-slate-300"
+                  value={formData.title}
+                  onChange={e => setFormData({...formData, title: e.target.value})}
+                />
+
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Dato</label>
+                    <input 
+                      required
+                      type="date" 
+                      className="w-full p-2 bg-slate-50 rounded-lg border-none focus:ring-2 focus:ring-yellow-400 font-bold"
+                      value={formData.date}
+                      onChange={e => setFormData({...formData, date: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Type</label>
+                    <select 
+                      className="w-full p-2 bg-slate-50 rounded-lg border-none focus:ring-2 focus:ring-yellow-400 font-bold appearance-none cursor-pointer"
+                      value={formData.type}
+                      onChange={e => setFormData({...formData, type: e.target.value})}
+                    >
+                      {EVENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Lokasjon</label>
+                  <input 
+                    type="text" 
+                    placeholder="Hvor skal vi?"
+                    className="w-full p-2 bg-slate-50 rounded-lg border-none focus:ring-2 focus:ring-yellow-400 font-bold"
+                    value={formData.location}
+                    onChange={e => setFormData({...formData, location: e.target.value})}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Hvem blir med?</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {RUNNERS.map(runner => (
+                      <button
+                        key={runner.name}
+                        type="button"
+                        onClick={() => toggleParticipant(runner.name)}
+                        className={`p-3 rounded-xl text-sm font-black uppercase tracking-tighter border-2 transition-all flex items-center justify-center gap-2 ${
+                          formData.participants.includes(runner.name)
+                            ? `${runner.bg} border-transparent ${runner.text}`
+                            : 'bg-white border-slate-100 text-slate-300'
+                        }`}
+                      >
+                        <User className="w-3 h-3" />
+                        {runner.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <button 
+                type="submit"
+                className="w-full p-4 rounded-2xl bg-yellow-400 text-slate-900 font-black uppercase tracking-widest hover:bg-yellow-300 shadow-[0_6px_0_rgb(161,131,0)] active:translate-y-1 active:shadow-none transition-all mt-4"
+              >
+                Lagre i kalender
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+      
+      {/* Bottom Info */}
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-slate-900/90 backdrop-blur rounded-full text-[10px] text-white font-black uppercase tracking-widest border border-white/10 shadow-2xl z-10">
+        4 Gutter • En Kalender • 2026
+      </div>
+    </div>
+  );
+}
